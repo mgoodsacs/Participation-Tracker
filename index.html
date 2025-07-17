@@ -73,6 +73,14 @@
     let editMode = false;
     let studentData = [];
 
+    let saveTimeout;
+const autoSave = () => {
+  clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(() => {
+    saveData();
+  }, 500); // wait 500ms after last change
+};
+
     // Utils
     const getColor = score => {
       if (score >= 5) return 'bg-green-300';
@@ -205,6 +213,14 @@ dateSelector.addEventListener('change', () => {
     seatingChart.addEventListener('dragend', () => {
   saveData(); // Save new seating order
 });
+
+    seatingChart.addEventListener('blur', (e) => {
+  const cell = e.target.closest('.draggable');
+  if (!cell) return;
+  const id = parseInt(cell.getAttribute('data-id'));
+  studentData[id].name = cell.querySelector('.student-name').innerText.trim();
+  saveData();
+}, true); // Use capture so blur bubbles correctly
 
     seatingChart.addEventListener('click', (e) => {
       const cell = e.target.closest('.draggable');
