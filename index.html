@@ -78,7 +78,7 @@
 const autoSave = () => {
   clearTimeout(saveTimeout);
   saveTimeout = setTimeout(() => {
-    saveData();
+    autoSave();
   }, 500);
 };
 
@@ -87,7 +87,7 @@ const flushAutoSave = async () => {
   if (saveTimeout) {
     clearTimeout(saveTimeout);
     saveTimeout = null;
-    await saveData();  // Force save immediately
+    await autoSave();  // Force save immediately
   }
 };
 
