@@ -138,19 +138,28 @@
     };
 
     const snapshotDaily = async () => {
-      const now = new Date();
-      if (now.getHours() === 14 && now.getMinutes() === 30) {
-        const snapshotDate = now.toISOString().split('T')[0];
-        const allClasses = classSelector.options;
-        for (let opt of allClasses) {
-          const doc = await db.collection('classes').doc(opt.value).collection('dates').doc(snapshotDate).get();
-          if (!doc.exists) {
-            const base = Array.from({ length: 50 }, (_, i) => ({ name: `Seat ${i + 1}`, score: 5 }));
-            await db.collection('classes').doc(opt.value).collection('dates').doc(snapshotDate).set({ students: base });
-          }
-        }
-      }
-    };
+  const snapshotDate = new Date().toISOString().split('T')[0];
+  const allClasses = classSelector.options;
+
+  for (let opt of allClasses) {
+    const classId = opt.value;
+    const docRef = db.collection('classes').doc(classId).collection('dates').doc(snapshotDate);
+
+    const existing = await docRef.get();
+    if (!existing.exists) {
+      // Load seating for the class
+      const res = await db.collection('classes').doc(classId).collection('seating').doc('layout').get();
+      const layout = res.exists ? res.data().students : [];
+
+      // Snapshot score layout (default 5 if not found)
+      const snapshot = layout.map(s => ({ name: s.name || '', score: 5 }));
+
+      await docRef.set({ students: snapshot });
+      console.log(`Snapshot saved for ${classId}`);
+    }
+  }
+};
+
 
     const resetAtMidnight = () => {
       const now = new Date();
@@ -170,6 +179,19 @@
       loadData();
     });
 
+    classSelector.addEventListener('change', () => {
+  saveData(); // Save current class before switching
+  currentClass = classSelector.value;
+  loadData();
+});
+
+dateSelector.addEventListener('change', () => {
+  saveData(); // Save current date before switching
+  currentDate = dateSelector.value;
+  loadData();
+});
+
+
     dateSelector.addEventListener('change', () => {
       currentDate = dateSelector.value;
       loadData();
@@ -179,6 +201,10 @@
       editMode = !editMode;
       renderChart();
     });
+
+    seatingChart.addEventListener('dragend', () => {
+  saveData(); // Save new seating order
+});
 
     seatingChart.addEventListener('click', (e) => {
       const cell = e.target.closest('.draggable');
