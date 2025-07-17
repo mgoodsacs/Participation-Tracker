@@ -218,8 +218,35 @@
 
     // Start
     loadData();
-    resetAtMidnight();
-    setInterval(snapshotDaily, 60000); // Check every minute
+    // Reset scores but keep student names
+  const resetScores = () => {
+  studentData = studentData.map(s => ({ ...s, score: 5 }));
+  saveData();
+  renderChart();
+};
+    // Check time every minute
+setInterval(() => {
+  const now = new Date();
+  const hours = now.getHours();
+  const minutes = now.getMinutes();
+
+  // Save snapshot at 2:30pm
+  if (hours === 14 && minutes === 30) {
+    db.collection('classes')
+      .doc(currentClass)
+      .collection('snapshots')
+      .doc(currentDate)
+      .set({ students: studentData })
+      .then(() => console.log(`Snapshot saved for ${currentClass} at ${currentDate}`));
+  }
+
+  // Reset scores at midnight
+  if (hours === 0 && minutes === 0) {
+    currentDate = new Date().toISOString().split('T')[0]; // update date
+    resetScores();
+  }
+}, 60 * 1000); // every minute
+
   </script>
 </body>
 </html>
