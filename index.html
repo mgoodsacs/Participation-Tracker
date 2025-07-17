@@ -81,11 +81,16 @@
       return 'bg-red-300';
     };
 
+    const isPlaceholderStudent = (name) => {
+      return name.toLowerCase().includes('student');
+    };
+
     const renderChart = () => {
       seatingChart.innerHTML = '';
       studentData.forEach((student, index) => {
         const cell = document.createElement('div');
-        cell.className = `p-2 text-center border rounded ${getColor(student.score)} draggable`;
+        const baseColor = isPlaceholderStudent(student.name) ? 'bg-gray-300 opacity-50' : getColor(student.score);
+        cell.className = `p-2 text-center border rounded ${baseColor} draggable`;
         cell.setAttribute('data-id', index);
         cell.innerHTML = `
           <div contenteditable="${editMode}" class="font-bold student-name">${student.name}</div>
