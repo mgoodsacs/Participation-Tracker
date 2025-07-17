@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Class Participation Tracker</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #1e1e1e;
+      color: #f0f0f0;
+      padding: 20px;
+    }
+    select, button, textarea {
+      font-size: 1rem;
+      margin: 5px 0;
+    }
+    .student {
+      display: flex;
+      align-items: center;
+      margin-bottom: 6px;
+      justify-content: space-between;
+    }
+    .student-name {
+      flex: 1;
+    }
+    .score {
+      width: 30px;
+      text-align: center;
+    }
+    .buttons {
+      display: flex;
+      gap: 4px;
+    }
+    .top-bar {
+      margin-bottom: 15px;
+    }
+    textarea {
+      width: 100%;
+      height: 80px;
+      background: #333;
+      color: #fff;
+      border: 1px solid #555;
+      padding: 6px;
+    }
+    .container {
+      max-width: 600px;
+      margin: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎶 Class Participation Tracker</h1>
+    <div class="top-bar">
+      <label for="classSelect">Select Class:</label>
+      <select id="classSelect"></select>
+      <div style="margin-top: 10px;">
+        <label for="studentInput">Paste Student List (one per line):</label>
+        <textarea id="studentInput" placeholder="John Doe&#10;Jane Smith"></textarea>
+        <button onclick="updateStudents()">Update Students</button>
+      </div>
+    </div>
+    <div id="studentList"></div>
+  </div>
+
+  <script>
+    const classes = [
+      "Red2 - 6th Grade Choir",
+      "White2 - 6th Grade Choir",
+      "White3 - Musical Theatre",
+      "Red4 - 8th Grade Choir",
+      "White4 - 7th Grade Choir",
+      "Class 6",
+      "Class 7",
+      "Class 8"
+    ];
+
+    const classSelect = document.getElementById("classSelect");
+    const studentList = document.getElementById("studentList");
+    const studentInput = document.getElementById("studentInput");
+
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
+    function getStorageKey(className) {
+      return `participation_${className}_${today}`;
+    }
+
+    function saveData(className, data) {
+      localStorage.setItem(getStorageKey(className), JSON.stringify(data));
+    }
+
+    function loadData(className) {
+      const saved = localStorage.getItem(getStorageKey(className));
+      return saved ? JSON.parse(saved) : {};
+    }
+
+    function renderStudents() {
+      const className = classSelect.value;
+      const data = loadData(className);
+      studentList.innerHTML = "";
+
+      Object.keys(data).forEach(name => {
+        const score = data[name];
+        const div = document.createElement("div");
+        div.className = "student";
+        div.innerHTML = `
+          <div class="student-name">${name}</div>
+          <div class="buttons">
+            <button onclick="changeScore('${name}', -1)">-</button>
+            <div class="score" id="score-${name}">${score}</div>
+            <button onclick="changeScore('${name}', 1)">+</button>
+          </div>
+        `;
+        studentList.appendChild(div);
+      });
+    }
+
+    function changeScore(name, delta) {
+      const className = classSelect.value;
+      const data = loadData(className);
+      let newScore = (data[name] || 5) + delta;
+      newScore = Math.max(-5, Math.min(10, newScore));
+      data[name] = newScore;
+      saveData(className, data);
+      document.getElementById(`score-${name}`).innerText = newScore;
+    }
+
+    function updateStudents() {
+      const className = classSelect.value;
+      const names = studentInput.value
+        .split('\n')
+        .map(n => n.trim())
+        .filter(n => n);
+
+      const data = loadData(className);
+      names.forEach(name => {
+        if (!(name in data)) {
+          data[name] = 5;
+        }
+      });
+      saveData(className, data);
+      renderStudents();
+      studentInput.value = "";
+    }
+
+    function init() {
+      classes.forEach(c => {
+        const opt = document.createElement("option");
+        opt.value = c;
+        opt.innerText = c;
+        classSelect.appendChild(opt);
+      });
+
+      classSelect.addEventListener("change", renderStudents);
+      classSelect.value = classes[0];
+      renderStudents();
+    }
+
+    init();
+  </script>
+</body>
+</html>
