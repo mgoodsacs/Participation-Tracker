@@ -20,18 +20,23 @@
     .student-box {
       background: #333;
       padding: 10px;
-      border-radius: 5px;
+      border-radius: 10px;
       text-align: center;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
     }
     .student-box input {
       width: 90%;
       margin-bottom: 5px;
+      text-align: center;
     }
     .controls {
       margin-bottom: 20px;
     }
     button {
-      margin-left: 5px;
+      margin: 2px;
     }
   </style>
 </head>
@@ -64,7 +69,12 @@
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     const firebaseConfig = {
-      // Your Firebase config here
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_AUTH_DOMAIN",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_STORAGE_BUCKET",
+      messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+      appId: "YOUR_APP_ID"
     };
 
     const app = initializeApp(firebaseConfig);
@@ -126,16 +136,37 @@
 
       for (let row = 0; row < ROWS; row++) {
         for (let col = 0; col < COLS; col++) {
-          const seatIndex = row * COLS + col;
+          const seatIndex = (ROWS - row - 1) * COLS + col; // bottom-left to top-right
           const savedSeat = savedSeats[seatIndex] || {};
           const seat = {
             name: savedSeat.name || "",
             score: savedSeat.score ?? DEFAULT_SCORE
           };
-          seats.push(seat);
+          seats[seatIndex] = seat;
 
           const box = document.createElement("div");
           box.className = "student-box";
+          box.draggable = isEditMode;
+
+          box.addEventListener("dragstart", e => {
+            e.dataTransfer.setData("text/plain", seatIndex);
+          });
+
+          box.addEventListener("dragover", e => {
+            if (isEditMode) e.preventDefault();
+          });
+
+          box.addEventListener("drop", e => {
+            if (!isEditMode) return;
+            e.preventDefault();
+            const fromIndex = parseInt(e.dataTransfer.getData("text/plain"));
+            const toIndex = seatIndex;
+            const temp = seats[fromIndex];
+            seats[fromIndex] = seats[toIndex];
+            seats[toIndex] = temp;
+            saveClassData(seats);
+            renderGrid(seats);
+          });
 
           const nameDiv = document.createElement(isEditMode ? "input" : "div");
           if (isEditMode) {
@@ -172,6 +203,7 @@
           box.appendChild(scoreSpan);
           box.appendChild(plusBtn);
           box.appendChild(minusBtn);
+
           gridContainer.appendChild(box);
         }
       }
