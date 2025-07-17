@@ -182,15 +182,15 @@ const autoSave = () => {
     };
 
     // Event Listeners
-    classSelector.addEventListener('change', () => {
-      currentClass = classSelector.value;
-      loadData();
-    });
+ classSelector.addEventListener("change", () => {
+  // Save current class before switching
+  autoSave();
 
-    classSelector.addEventListener('change', () => {
-  autoSave(); // Save current class before switching
-  currentClass = classSelector.value;
-  loadData();
+  // Delay updating class and loading new data until save has settled
+  setTimeout(() => {
+    currentClass = classSelector.value;
+    loadData(); // Loads new class data after update
+  }, 600); // Slightly longer than autoSave delay (500ms)
 });
 
 dateSelector.addEventListener('change', () => {
