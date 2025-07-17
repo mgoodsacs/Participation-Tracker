@@ -3,92 +3,87 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Class Participation Tracker</title>
+  <title>🎵 Participation Tracker</title>
   <style>
     body {
-      background-color: #121212;
-      color: #ffffff;
-      font-family: Arial, sans-serif;
-      padding: 1rem;
+      font-family: sans-serif;
+      background: #121212;
+      color: #fff;
+      padding: 20px;
+      text-align: center;
     }
-
-    select, button {
+    button, select {
       margin: 5px;
-      padding: 6px;
-      font-size: 1rem;
+      padding: 10px;
+      font-size: 16px;
+      border-radius: 10px;
+      border: none;
     }
-
-    .grid {
+    #seatingChart {
       display: grid;
       grid-template-columns: repeat(10, 1fr);
-      grid-template-rows: repeat(5, 80px);
-      gap: 5px;
-      margin-top: 20px;
+      grid-template-rows: repeat(5, 1fr);
+      gap: 10px;
+      margin-top: 30px;
+      max-width: 1000px;
+      margin-left: auto;
+      margin-right: auto;
     }
-
     .student {
-      background-color: #1e1e1e;
-      border: 1px solid #444;
-      border-radius: 5px;
-      padding: 5px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: space-between;
+      background: #1f1f1f;
+      border: 2px solid #333;
+      padding: 10px;
+      text-align: center;
+      border-radius: 8px;
       cursor: grab;
+      position: relative;
     }
-
     .student.dragging {
       opacity: 0.5;
     }
-
-    .score {
-      font-size: 1.2em;
-      margin: 5px 0;
+    .student .name {
+      font-weight: bold;
     }
-
+    .controls {
+      display: flex;
+      justify-content: center;
+      margin-top: 5px;
+    }
     .controls button {
-      background-color: #333;
-      color: white;
-      border: none;
-      padding: 2px 8px;
-      margin: 0 2px;
-      cursor: pointer;
-      font-size: 1rem;
-    }
-
-    .edit-mode {
-      outline: 2px dashed #888;
+      width: 30px;
+      height: 30px;
+      margin: 0 5px;
     }
   </style>
 </head>
 <body>
-  <h2>🎵 Participation Tracker</h2>
-
-  <label for="classSelect">Select Class:</label>
-  <select id="classSelect">
-    <option>Red2 - 6th Grade Choir</option>
-    <option>White2 - 6th Grade Choir</option>
-    <option>White3 - Musical Theatre</option>
-    <option>Red4 - 8th Grade Choir</option>
-    <option>White4 - 7th Grade Choir</option>
-    <option>Class A</option>
-    <option>Class B</option>
-    <option>Class C</option>
-  </select>
-  <button onclick="toggleEditMode()">Toggle Edit Mode</button>
-  <button onclick="pasteStudentList()">Paste Students</button>
-
-  <div class="grid" id="seatingGrid"></div>
+  <h1>🎵 Participation Tracker</h1>
+  <label>Select Class:
+    <select id="classSelect">
+      <option>Red2 - 6th Grade Choir</option>
+      <option>White2 - 6th Grade Choir</option>
+      <option>White3 - Musical Theatre</option>
+      <option>Red4 - 8th Grade Choir</option>
+      <option>White4 - 7th Grade Choir</option>
+      <option>Class A</option>
+      <option>Class B</option>
+      <option>Class C</option>
+    </select>
+  </label>
+  <div>
+    <button onclick="toggleEditMode()">Toggle Edit Mode</button>
+    <button onclick="pasteStudents()">Paste Students</button>
+  </div>
+  <div id="seatingChart"></div>
 
   <script type="module">
-    // Firebase setup
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { getDatabase, ref, set, get, child } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyAZrtFqgzS4ZFANgQZLT13HQs8lAecuJyM",
       authDomain: "class-tracker-3b9ff.firebaseapp.com",
+      databaseURL: "https://class-tracker-3b9ff-default-rtdb.firebaseio.com",
       projectId: "class-tracker-3b9ff",
       storageBucket: "class-tracker-3b9ff.appspot.com",
       messagingSenderId: "761182403925",
@@ -96,147 +91,117 @@
     };
 
     const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+    const db = getDatabase(app);
 
-    const grid = document.getElementById('seatingGrid');
-    const classSelect = document.getElementById('classSelect');
-    const today = new Date().toISOString().split('T')[0];
+    const chart = document.getElementById("seatingChart");
+    const classSelect = document.getElementById("classSelect");
 
     let students = [];
-    let isEditing = false;
+    let isEditMode = false;
+    const maxScore = 10;
+    const minScore = -5;
 
-    classSelect.addEventListener('change', loadClassData);
-
-    function toggleEditMode() {
-      isEditing = !isEditing;
-      [...grid.children].forEach(div => {
-        div.classList.toggle("edit-mode", isEditing);
+    function randomizePlacement(list) {
+      const grid = new Array(50).fill(null);
+      list.forEach((student, i) => {
+        grid[i] = student;
       });
+      return grid.reverse();
     }
 
-    function pasteStudentList() {
-      navigator.clipboard.readText().then(text => {
-        const names = text.trim().split('\n').map(s => s.trim()).filter(Boolean);
-        students = names.map(name => ({ name, score: 5 }));
-        shuffleAndPlace();
-        saveToFirebase();
-      });
-    }
-
-    function shuffleAndPlace() {
-      const totalCells = 50;
-      const randomIndexes = Array.from({ length: totalCells }, (_, i) => i).sort(() => Math.random() - 0.5);
-
-      grid.innerHTML = '';
-      const layout = Array(50).fill(null);
-
-      students.forEach((student, idx) => {
-        const index = randomIndexes[idx];
-        layout[index] = student;
-      });
-
-      renderGrid(layout);
-    }
-
-    function renderGrid(layout) {
-      grid.innerHTML = '';
-      layout.forEach((student, i) => {
-        const box = document.createElement('div');
-        box.classList.add('student');
-        box.setAttribute('draggable', isEditing);
-        box.dataset.index = i;
+    function render() {
+      chart.innerHTML = "";
+      students.forEach((student, index) => {
+        const div = document.createElement("div");
+        div.className = "student";
+        div.draggable = isEditMode;
+        div.dataset.index = index;
 
         if (student) {
-          box.innerHTML = `
-            <div>${student.name}</div>
-            <div class="score">${student.score}</div>
+          div.innerHTML = `
+            <div class="name">${student.name}</div>
+            <div class="score">Score: ${student.score}</div>
             <div class="controls">
-              <button onclick="updateScore(${i}, 1)">+1</button>
-              <button onclick="updateScore(${i}, -1)">-1</button>
+              <button class="plus">+</button>
+              <button class="minus">-</button>
             </div>
           `;
         }
 
-        box.addEventListener('dragstart', dragStart);
-        box.addEventListener('dragover', e => e.preventDefault());
-        box.addEventListener('drop', dropStudent);
-
-        grid.appendChild(box);
+        chart.appendChild(div);
       });
 
-      students = layout.filter(s => s !== null);
-    }
+      document.querySelectorAll(".student").forEach(box => {
+        box.addEventListener("dragstart", e => {
+          if (!isEditMode) return;
+          e.dataTransfer.setData("text/plain", box.dataset.index);
+          box.classList.add("dragging");
+        });
+        box.addEventListener("dragend", e => box.classList.remove("dragging"));
+        box.addEventListener("dragover", e => e.preventDefault());
+        box.addEventListener("drop", e => {
+          e.preventDefault();
+          const from = parseInt(e.dataTransfer.getData("text/plain"));
+          const to = parseInt(box.dataset.index);
+          [students[from], students[to]] = [students[to], students[from]];
+          saveClass();
+          render();
+        });
 
-    function updateScore(index, change) {
-      const divs = Array.from(grid.children);
-      const studentBox = divs[index];
-      const name = studentBox.querySelector('div').innerText;
-
-      let student = students.find(s => s.name === name);
-      if (!student) return;
-
-      student.score = Math.max(-5, Math.min(10, student.score + change));
-      studentBox.querySelector('.score').innerText = student.score;
-      saveToFirebase();
-    }
-
-    let dragIndex = null;
-
-    function dragStart(e) {
-      dragIndex = +e.target.dataset.index;
-      e.target.classList.add('dragging');
-    }
-
-    function dropStudent(e) {
-      const dropIndex = +e.currentTarget.dataset.index;
-      const nodes = [...grid.children];
-      const layout = Array(50).fill(null);
-
-      nodes.forEach((node, i) => {
-        const name = node.querySelector('div')?.innerText;
-        if (name) {
-          const student = students.find(s => s.name === name);
-          layout[i] = { ...student };
+        const plus = box.querySelector(".plus");
+        const minus = box.querySelector(".minus");
+        if (plus && minus) {
+          plus.onclick = () => {
+            if (students[box.dataset.index].score < maxScore) {
+              students[box.dataset.index].score++;
+              saveClass();
+              render();
+            }
+          };
+          minus.onclick = () => {
+            if (students[box.dataset.index].score > minScore) {
+              students[box.dataset.index].score--;
+              saveClass();
+              render();
+            }
+          };
         }
       });
-
-      const draggedStudent = layout[dragIndex];
-      layout[dragIndex] = layout[dropIndex];
-      layout[dropIndex] = draggedStudent;
-
-      renderGrid(layout);
-      saveToFirebase();
     }
 
-    async function saveToFirebase() {
-      const classKey = classSelect.value;
-      const docRef = doc(db, "classes", `${classKey}_${today}`);
+    function pasteStudents() {
+      const text = prompt("Paste student names (one per line):");
+      if (!text) return;
+      const names = text.split("\n").map(name => name.trim()).filter(Boolean);
+      students = randomizePlacement(names.map(name => ({ name, score: 5 })));
+      saveClass();
+      render();
+    }
 
-      const layoutData = Array.from(grid.children).map(div => {
-        const name = div.querySelector('div')?.innerText;
-        const score = div.querySelector('.score')?.innerText;
-        return name ? { name, score: parseInt(score) } : null;
+    function toggleEditMode() {
+      isEditMode = !isEditMode;
+      render();
+    }
+
+    function saveClass() {
+      const key = `${classSelect.value.replace(/\s+/g, "_")}/${new Date().toISOString().slice(0, 10)}`;
+      set(ref(db, key), students);
+    }
+
+    function loadClass() {
+      const key = `${classSelect.value.replace(/\s+/g, "_")}/${new Date().toISOString().slice(0, 10)}`;
+      get(child(ref(db), key)).then(snapshot => {
+        if (snapshot.exists()) {
+          students = snapshot.val();
+        } else {
+          students = new Array(50).fill(null);
+        }
+        render();
       });
-
-      await setDoc(docRef, { layout: layoutData });
     }
 
-    async function loadClassData() {
-      const classKey = classSelect.value;
-      const docRef = doc(db, "classes", `${classKey}_${today}`);
-      const docSnap = await getDoc(docRef);
-
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        renderGrid(data.layout);
-      } else {
-        students = [];
-        grid.innerHTML = '';
-      }
-    }
-
-    window.updateScore = updateScore;
-    loadClassData(); // initial load
+    classSelect.addEventListener("change", () => loadClass());
+    loadClass();
   </script>
 </body>
 </html>
