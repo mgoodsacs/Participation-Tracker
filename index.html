@@ -2,43 +2,53 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Choir Participation Tracker</title>
-  <style>
-    body { font-family: Arial; padding: 20px; }
-    #controls { margin-bottom: 20px; }
-    .grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 10px; }
-    .student-box {
-      border: 1px solid #ccc;
-      padding: 5px;
-      text-align: center;
-      border-radius: 6px;
-      cursor: move;
-      background-color: #f0f0f0;
-    }
-    .green { background-color: #a8e6a1; }
-    .yellow { background-color: #fff59d; }
-    .orange { background-color: #ffcc80; }
-    .red { background-color: #ef9a9a; }
-    .edit-mode input { width: 100%; }
-  </style>
+  <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.14.0/Sortable.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-  <div id="controls">
-    <select id="classSelector"></select>
-    <button onclick="toggleEditMode()">Toggle Edit Mode</button>
-    <textarea id="nameInput" rows="4" cols="50" placeholder="Enter student names..."></textarea>
-    <button onclick="populateNames()">Populate Names</button>
+<body class="bg-gray-100 p-4 text-sm">
+  <div class="max-w-screen-lg mx-auto">
+    <h1 class="text-2xl font-bold mb-4">Choir Participation Tracker</h1>
+
+    <!-- Controls -->
+    <div class="flex flex-wrap gap-2 items-center mb-4">
+      <select id="classSelector" class="p-2 border rounded">
+        <option>Red2-6th</option>
+        <option>White2-6th</option>
+        <option>White3-MT</option>
+        <option>Red4-8th</option>
+        <option>White4-7th</option>
+        <option>Class A</option>
+        <option>Class B</option>
+        <option>Class C</option>
+      </select>
+
+      <input type="date" id="dateSelector" class="p-2 border rounded"/>
+
+      <button id="editModeToggle" class="bg-blue-500 text-white px-3 py-1 rounded">Toggle Edit Mode</button>
+      <button id="bulkNameBtn" class="bg-green-500 text-white px-3 py-1 rounded">Bulk Name Input</button>
+    </div>
+
+    <!-- Seating Chart -->
+    <div id="seatingChart" class="grid grid-cols-10 gap-2"></div>
   </div>
 
-  <div class="grid" id="seatingGrid"></div>
+  <!-- Bulk Input Modal -->
+  <div id="bulkModal" class="fixed inset-0 bg-black bg-opacity-50 items-center justify-center hidden z-50">
+    <div class="bg-white p-4 rounded shadow max-w-md w-full">
+      <h2 class="text-xl mb-2">Bulk Student Names (one per line)</h2>
+      <textarea id="bulkNames" rows="10" class="w-full border p-2 mb-2"></textarea>
+      <div class="flex justify-end gap-2">
+        <button id="bulkCancel" class="bg-gray-300 px-3 py-1 rounded">Cancel</button>
+        <button id="bulkSubmit" class="bg-blue-500 text-white px-3 py-1 rounded">Submit</button>
+      </div>
+    </div>
+  </div>
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import {
-      getFirestore, doc, setDoc, getDoc, updateDoc, collection, getDocs
-    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-
+  <script>
     const firebaseConfig = {
       apiKey: "AIzaSyCybxkV-rl6f9EvzSasLV09uFA3XzY6gqg",
       authDomain: "participation-tracker-a1f77.firebaseapp.com",
@@ -48,134 +58,163 @@
       appId: "1:992471258983:web:a19d47a70a5cc91a1d2971"
     };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
 
-    const classList = [
-      "Red2-6th",
-      "White2-6th",
-      "White3-Musical Theatre",
-      "Red4-8th",
-      "White4-7th",
-      "Class A",
-      "Class B",
-      "Class C"
-    ];
+    const seatingChart = document.getElementById('seatingChart');
+    const classSelector = document.getElementById('classSelector');
+    const dateSelector = document.getElementById('dateSelector');
+    const editToggle = document.getElementById('editModeToggle');
+    const bulkModal = document.getElementById('bulkModal');
+    const bulkBtn = document.getElementById('bulkNameBtn');
 
-    const grid = document.getElementById("seatingGrid");
-    const selector = document.getElementById("classSelector");
-    const nameInput = document.getElementById("nameInput");
-    let currentClass = classList[0];
-    let students = [];
+    let currentClass = classSelector.value;
+    let currentDate = new Date().toISOString().split('T')[0];
     let editMode = false;
+    let studentData = [];
 
-    classList.forEach(c => {
-      const opt = document.createElement("option");
-      opt.value = c;
-      opt.textContent = c;
-      selector.appendChild(opt);
-    });
-
-    selector.addEventListener("change", async () => {
-      currentClass = selector.value;
-      await loadSeating();
-      await dailyResetCheck();
-      renderGrid();
-    });
-
-    function toggleEditMode() {
-      editMode = !editMode;
-      renderGrid();
-    }
-
-    async function populateNames() {
-      const names = nameInput.value.trim().split("\n").filter(n => n);
-      students = names.map(name => ({ name, points: 5 }));
-      await saveSeating();
-      await saveTodayScores();
-      renderGrid();
-    }
-
-    function getColor(points) {
-      if (points >= 5) return "green";
-      if (points >= 3) return "yellow";
-      if (points >= 1) return "orange";
-      return "red";
-    }
-
-    function renderGrid() {
-      grid.innerHTML = "";
-      students.forEach((student, i) => {
-        const div = document.createElement("div");
-        div.className = `student-box ${getColor(student.points)}`;
-
-        if (editMode) {
-          const input = document.createElement("input");
-          input.value = student.name;
-          input.onchange = async () => {
-            student.name = input.value;
-            await saveSeating();
-          };
-          div.appendChild(input);
-        } else {
-          div.innerHTML = `
-            <div>${student.name}</div>
-            <div>
-              <button onclick="adjustPoints(${i}, -1)">-1</button>
-              <span>${student.points}</span>
-              <button onclick="adjustPoints(${i}, 1)">+1</button>
-            </div>
-          `;
-        }
-        grid.appendChild(div);
-      });
-    }
-
-    window.adjustPoints = async (index, delta) => {
-      let s = students[index];
-      s.points = Math.min(10, Math.max(-5, s.points + delta));
-      await saveTodayScores();
-      renderGrid();
+    // Utils
+    const getColor = score => {
+      if (score >= 5) return 'bg-green-300';
+      if (score >= 3) return 'bg-yellow-300';
+      if (score >= 1) return 'bg-orange-300';
+      return 'bg-red-300';
     };
 
-    async function saveSeating() {
-      await setDoc(doc(db, "seating", currentClass), { students });
-    }
+    const renderChart = () => {
+      seatingChart.innerHTML = '';
+      studentData.forEach((student, index) => {
+        const cell = document.createElement('div');
+        cell.className = `p-2 text-center border rounded ${getColor(student.score)} draggable`;
+        cell.setAttribute('data-id', index);
+        cell.innerHTML = `
+          <div contenteditable="${editMode}" class="font-bold student-name">${student.name}</div>
+          <div class="flex items-center justify-center mt-1 gap-2">
+            <button class="minus bg-gray-500 text-white px-1 rounded">-</button>
+            <span>${student.score}</span>
+            <button class="plus bg-gray-500 text-white px-1 rounded">+</button>
+          </div>
+        `;
+        seatingChart.appendChild(cell);
+      });
 
-    async function loadSeating() {
-      const docSnap = await getDoc(doc(db, "seating", currentClass));
-      students = docSnap.exists() ? docSnap.data().students : [];
-    }
-
-    async function saveTodayScores() {
-      const today = new Date().toISOString().split("T")[0];
-      await setDoc(doc(db, `scores/${today}/${currentClass}`), { students });
-    }
-
-    async function loadTodayScores() {
-      const today = new Date().toISOString().split("T")[0];
-      const docSnap = await getDoc(doc(db, `scores/${today}/${currentClass}`));
-      if (docSnap.exists()) {
-        students = docSnap.data().students;
+      if (editMode) {
+        Sortable.create(seatingChart, {
+          animation: 150,
+          onEnd: () => {
+            const newOrder = [];
+            document.querySelectorAll('#seatingChart .draggable').forEach(el => {
+              const id = parseInt(el.getAttribute('data-id'));
+              newOrder.push(studentData[id]);
+            });
+            studentData = newOrder;
+            saveData();
+            renderChart();
+          }
+        });
       }
-    }
+    };
 
-    async function dailyResetCheck() {
-      const today = new Date().toISOString().split("T")[0];
-      const lastDate = localStorage.getItem("lastResetDate");
-      if (lastDate !== today) {
-        await loadSeating();
-        students = students.map(s => ({ ...s, points: 5 }));
-        await saveTodayScores();
-        localStorage.setItem("lastResetDate", today);
+    const saveData = async () => {
+      await db.collection('classes').doc(currentClass).collection('dates').doc(currentDate).set({
+        students: studentData
+      });
+    };
+
+    const loadData = async () => {
+      const doc = await db.collection('classes').doc(currentClass).collection('dates').doc(currentDate).get();
+      if (doc.exists) {
+        studentData = doc.data().students;
       } else {
-        await loadTodayScores();
+        studentData = Array.from({ length: 50 }, (_, i) => ({ name: `Seat ${i + 1}`, score: 5 }));
+        saveData();
       }
-    }
+      renderChart();
+    };
 
-    await loadSeating();
-    await dailyResetCheck();
-    renderGrid();
+    const snapshotDaily = async () => {
+      const now = new Date();
+      if (now.getHours() === 14 && now.getMinutes() === 30) {
+        const snapshotDate = now.toISOString().split('T')[0];
+        const allClasses = classSelector.options;
+        for (let opt of allClasses) {
+          const doc = await db.collection('classes').doc(opt.value).collection('dates').doc(snapshotDate).get();
+          if (!doc.exists) {
+            const base = Array.from({ length: 50 }, (_, i) => ({ name: `Seat ${i + 1}`, score: 5 }));
+            await db.collection('classes').doc(opt.value).collection('dates').doc(snapshotDate).set({ students: base });
+          }
+        }
+      }
+    };
+
+    const resetAtMidnight = () => {
+      const now = new Date();
+      const msUntilMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime();
+      setTimeout(() => {
+        studentData.forEach(s => s.score = 5);
+        currentDate = new Date().toISOString().split('T')[0];
+        saveData();
+        renderChart();
+        resetAtMidnight(); // Set again for next midnight
+      }, msUntilMidnight);
+    };
+
+    // Event Listeners
+    classSelector.addEventListener('change', () => {
+      currentClass = classSelector.value;
+      loadData();
+    });
+
+    dateSelector.addEventListener('change', () => {
+      currentDate = dateSelector.value;
+      loadData();
+    });
+
+    editToggle.addEventListener('click', () => {
+      editMode = !editMode;
+      renderChart();
+    });
+
+    seatingChart.addEventListener('click', (e) => {
+      const cell = e.target.closest('.draggable');
+      if (!cell) return;
+      const id = parseInt(cell.getAttribute('data-id'));
+      if (e.target.classList.contains('plus')) {
+        if (studentData[id].score < 10) studentData[id].score++;
+      }
+      if (e.target.classList.contains('minus')) {
+        if (studentData[id].score > -5) studentData[id].score--;
+      }
+      studentData[id].name = cell.querySelector('.student-name').innerText.trim();
+      saveData();
+      renderChart();
+    });
+
+    bulkBtn.addEventListener('click', () => {
+      bulkModal.classList.remove('hidden');
+      document.getElementById('bulkNames').value = studentData.map(s => s.name).join('\n');
+    });
+
+    document.getElementById('bulkCancel').addEventListener('click', () => {
+      bulkModal.classList.add('hidden');
+    });
+
+    document.getElementById('bulkSubmit').addEventListener('click', () => {
+      const names = document.getElementById('bulkNames').value.split('\n').map(n => n.trim()).filter(n => n);
+      names.forEach((name, i) => {
+        if (!studentData[i]) studentData[i] = { name: '', score: 5 };
+        studentData[i].name = name;
+      });
+      while (studentData.length < 50) studentData.push({ name: `Seat ${studentData.length + 1}`, score: 5 });
+      saveData();
+      renderChart();
+      bulkModal.classList.add('hidden');
+    });
+
+    // Start
+    loadData();
+    resetAtMidnight();
+    setInterval(snapshotDaily, 60000); // Check every minute
   </script>
 </body>
 </html>
