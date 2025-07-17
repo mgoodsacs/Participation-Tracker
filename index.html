@@ -1,89 +1,99 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>🎵 Participation Tracker</title>
+  <title>Participation Tracker</title>
   <style>
     body {
-      font-family: sans-serif;
-      background: #121212;
+      background-color: #121212;
       color: #fff;
+      font-family: sans-serif;
+      margin: 0;
       padding: 20px;
-      text-align: center;
     }
-    button, select {
+    select, button, textarea {
       margin: 5px;
-      padding: 10px;
-      font-size: 16px;
-      border-radius: 10px;
-      border: none;
+      padding: 5px;
+      background-color: #1f1f1f;
+      color: #fff;
+      border: 1px solid #333;
     }
-    #seatingChart {
+    .grid {
       display: grid;
       grid-template-columns: repeat(10, 1fr);
-      grid-template-rows: repeat(5, 1fr);
-      gap: 10px;
-      margin-top: 30px;
-      max-width: 1000px;
-      margin-left: auto;
-      margin-right: auto;
+      grid-template-rows: repeat(5, 80px);
+      gap: 5px;
+      margin-top: 20px;
     }
     .student {
-      background: #1f1f1f;
-      border: 2px solid #333;
-      padding: 10px;
-      text-align: center;
-      border-radius: 8px;
+      background-color: #333;
+      border: 1px solid #666;
+      padding: 4px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      font-size: 12px;
+      border-radius: 4px;
       cursor: grab;
-      position: relative;
+      user-select: none;
     }
-    .student.dragging {
-      opacity: 0.5;
-    }
-    .student .name {
-      font-weight: bold;
+    .student.locked {
+      cursor: default;
     }
     .controls {
+      margin-top: 10px;
+    }
+    .score-controls {
       display: flex;
-      justify-content: center;
+      gap: 3px;
       margin-top: 5px;
     }
-    .controls button {
-      width: 30px;
-      height: 30px;
-      margin: 0 5px;
+    .score-controls button {
+      width: 20px;
+      height: 20px;
+      font-size: 12px;
+      line-height: 10px;
+      padding: 0;
+    }
+    #studentInput {
+      width: 100%;
+      height: 80px;
     }
   </style>
 </head>
 <body>
-  <h1>🎵 Participation Tracker</h1>
-  <label>Select Class:
-    <select id="classSelect">
-      <option>Red2 - 6th Grade Choir</option>
-      <option>White2 - 6th Grade Choir</option>
-      <option>White3 - Musical Theatre</option>
-      <option>Red4 - 8th Grade Choir</option>
-      <option>White4 - 7th Grade Choir</option>
-      <option>Class A</option>
-      <option>Class B</option>
-      <option>Class C</option>
-    </select>
-  </label>
-  <div>
-    <button onclick="toggleEditMode()">Toggle Edit Mode</button>
+  <h1>Participation Tracker</h1>
+
+  <label for="classSelect">Class:</label>
+  <select id="classSelect">
+    <option>Red2 - 6th Grade Choir</option>
+    <option>White2 - 6th Grade Choir</option>
+    <option>White3 - Musical Theatre</option>
+    <option>Red4 - 8th Grade Choir</option>
+    <option>White4 - 7th Grade Choir</option>
+    <option>Class A</option>
+    <option>Class B</option>
+    <option>Class C</option>
+  </select>
+
+  <div class="controls">
+    <button onclick="toggleEdit()">Toggle Edit Mode</button>
     <button onclick="pasteStudents()">Paste Students</button>
   </div>
-  <div id="seatingChart"></div>
+
+  <textarea id="studentInput" placeholder="Paste student names here (one per line)..."></textarea>
+
+  <div class="grid" id="seatingChart"></div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getDatabase, ref, set, get, child } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+    import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyAZrtFqgzS4ZFANgQZLT13HQs8lAecuJyM",
       authDomain: "class-tracker-3b9ff.firebaseapp.com",
-      databaseURL: "https://class-tracker-3b9ff-default-rtdb.firebaseio.com",
       projectId: "class-tracker-3b9ff",
       storageBucket: "class-tracker-3b9ff.appspot.com",
       messagingSenderId: "761182403925",
@@ -91,117 +101,15 @@
     };
 
     const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+    const db = getFirestore(app);
 
-    const chart = document.getElementById("seatingChart");
+    const seatingChart = document.getElementById("seatingChart");
     const classSelect = document.getElementById("classSelect");
-
-    let students = [];
     let isEditMode = false;
-    const maxScore = 10;
-    const minScore = -5;
+    let studentData = {};
+    let currentDate = new Date().toISOString().split("T")[0];
 
-    function randomizePlacement(list) {
-      const grid = new Array(50).fill(null);
-      list.forEach((student, i) => {
-        grid[i] = student;
-      });
-      return grid.reverse();
-    }
+    classSelect.addEventListener("change", loadClass);
 
-    function render() {
-      chart.innerHTML = "";
-      students.forEach((student, index) => {
-        const div = document.createElement("div");
-        div.className = "student";
-        div.draggable = isEditMode;
-        div.dataset.index = index;
-
-        if (student) {
-          div.innerHTML = `
-            <div class="name">${student.name}</div>
-            <div class="score">Score: ${student.score}</div>
-            <div class="controls">
-              <button class="plus">+</button>
-              <button class="minus">-</button>
-            </div>
-          `;
-        }
-
-        chart.appendChild(div);
-      });
-
-      document.querySelectorAll(".student").forEach(box => {
-        box.addEventListener("dragstart", e => {
-          if (!isEditMode) return;
-          e.dataTransfer.setData("text/plain", box.dataset.index);
-          box.classList.add("dragging");
-        });
-        box.addEventListener("dragend", e => box.classList.remove("dragging"));
-        box.addEventListener("dragover", e => e.preventDefault());
-        box.addEventListener("drop", e => {
-          e.preventDefault();
-          const from = parseInt(e.dataTransfer.getData("text/plain"));
-          const to = parseInt(box.dataset.index);
-          [students[from], students[to]] = [students[to], students[from]];
-          saveClass();
-          render();
-        });
-
-        const plus = box.querySelector(".plus");
-        const minus = box.querySelector(".minus");
-        if (plus && minus) {
-          plus.onclick = () => {
-            if (students[box.dataset.index].score < maxScore) {
-              students[box.dataset.index].score++;
-              saveClass();
-              render();
-            }
-          };
-          minus.onclick = () => {
-            if (students[box.dataset.index].score > minScore) {
-              students[box.dataset.index].score--;
-              saveClass();
-              render();
-            }
-          };
-        }
-      });
-    }
-
-    function pasteStudents() {
-      const text = prompt("Paste student names (one per line):");
-      if (!text) return;
-      const names = text.split("\n").map(name => name.trim()).filter(Boolean);
-      students = randomizePlacement(names.map(name => ({ name, score: 5 })));
-      saveClass();
-      render();
-    }
-
-    function toggleEditMode() {
+    function toggleEdit() {
       isEditMode = !isEditMode;
-      render();
-    }
-
-    function saveClass() {
-      const key = `${classSelect.value.replace(/\s+/g, "_")}/${new Date().toISOString().slice(0, 10)}`;
-      set(ref(db, key), students);
-    }
-
-    function loadClass() {
-      const key = `${classSelect.value.replace(/\s+/g, "_")}/${new Date().toISOString().slice(0, 10)}`;
-      get(child(ref(db), key)).then(snapshot => {
-        if (snapshot.exists()) {
-          students = snapshot.val();
-        } else {
-          students = new Array(50).fill(null);
-        }
-        render();
-      });
-    }
-
-    classSelect.addEventListener("change", () => loadClass());
-    loadClass();
-  </script>
-</body>
-</html>
