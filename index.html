@@ -2,222 +2,247 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Participation Tracker</title>
+  <script type="module" src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js"></script>
+  <script type="module" src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js"></script>
   <style>
-    body { background:#121212; color:#eee; font-family:sans-serif; padding:1rem; }
-    select,button,textarea,input { margin:5px; padding:8px; font-size:1rem; background:#222; color:#fff; border:1px solid #444; }
-    textarea { width:100%; height:80px; }
-    .grid { display:grid; grid-template-columns:repeat(10,1fr); gap:5px; margin-top:1rem; }
-    .seat { background:#1e1e1e; border-radius:4px; min-height:60px; display:flex; align-items:center; justify-content:center; cursor:default; user-select:none; position:relative; }
-    .seat.editable { cursor:grab; }
-    .seat .controls { position:absolute; bottom:4px; display:flex; gap:4px; }
-    .seat .controls button { padding:2px; font-size:0.8rem; width:24px; height:24px; }
-    .seat .name { font-size:0.9rem; text-align:center; }
-    .seat .score { position:absolute; top:4px; right:6px; font-size:0.9rem; }
-    .highlight { outline:2px dashed #4caf50; }
+    body {
+      background-color: #121212;
+      color: #fff;
+      font-family: sans-serif;
+      padding: 10px;
+    }
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      grid-template-rows: repeat(5, 80px);
+      gap: 5px;
+      max-width: 100%;
+    }
+    .student {
+      background: #333;
+      border-radius: 6px;
+      padding: 5px;
+      text-align: center;
+      position: relative;
+      user-select: none;
+    }
+    .student.dragging {
+      opacity: 0.5;
+    }
+    .score-btn {
+      margin: 2px;
+      background: #444;
+      color: white;
+      border: none;
+      padding: 2px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .edit-mode input {
+      width: 90%;
+      background: #222;
+      color: white;
+      border: 1px solid #555;
+      margin-top: 5px;
+    }
   </style>
 </head>
 <body>
+  <h1>Participation Tracker</h1>
+  <div class="controls">
+    <select id="classDropdown"></select>
+    <input type="date" id="datePicker" />
+    <button onclick="toggleEditMode()">Toggle Edit Mode</button>
+  </div>
+  <div id="seatingChart" class="grid"></div>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import {
+      getFirestore,
+      doc,
+      getDoc,
+      setDoc,
+      updateDoc,
+      collection,
+      getDocs
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-<h1>Participation Tracker</h1>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAZrtFqgzS4ZFANgQZLT13HQs8lAecuJyM",
+      authDomain: "class-tracker-3b9ff.firebaseapp.com",
+      projectId: "class-tracker-3b9ff",
+      storageBucket: "class-tracker-3b9ff.appspot.com",
+      messagingSenderId: "761182403925",
+      appId: "1:761182403925:web:86129fe303884abfe0c3dc"
+    };
 
-<label>Class:
-  <select id="classSelect"></select>
-</label>
-<button id="editModeBtn">Edit Mode: OFF</button>
-<button onclick="saveManually()">Save Now</button>
-<label>Date:
-  <input type="date" id="datePicker" />
-  <button onclick="loadByDate()">Load</button>
-</label>
-<br/>
-<textarea id="studentNames" placeholder="Paste student names (one per line)"></textarea>
-<button onclick="applyNames()">Apply Names</button>
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
 
-<div id="grid" class="grid"></div>
+    const classDropdown = document.getElementById("classDropdown");
+    const seatingChart = document.getElementById("seatingChart");
+    const datePicker = document.getElementById("datePicker");
 
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    let editMode = false;
+    let currentClass = "Red2 - 6th Grade Choir";
+    let studentData = [];
 
-  const firebaseConfig = {
-    apiKey: "AIzaSyAZrtFqgzS4ZFANgQZLT13HQs8lAecuJyM",
-    authDomain: "class-tracker-3b9ff.firebaseapp.com",
-    projectId: "class-tracker-3b9ff",
-    storageBucket: "class-tracker-3b9ff.appspot.com",
-    messagingSenderId: "761182403925",
-    appId: "1:761182403925:web:86129fe303884abfe0c3dc"
-  };
+    const classList = [
+      "Red2 - 6th Grade Choir",
+      "White2 - 6th Grade Choir",
+      "White3 - Musical Theatre",
+      "Red4 - 8th Grade Choir",
+      "White4 - 7th Grade Choir",
+      "Class A",
+      "Class B",
+      "Class C"
+    ];
 
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
+    classList.forEach((cls) => {
+      const opt = document.createElement("option");
+      opt.value = cls;
+      opt.textContent = cls;
+      classDropdown.appendChild(opt);
+    });
 
-  const classes = ["Red2-6th grade choir","White2-6th grade choir","White3-Musical Theatre","Red4-8th grade choir","White4-7th grade choir","Class A","Class B","Class C"];
-  const gridEl = document.getElementById("grid");
-  const classSelect = document.getElementById("classSelect");
-  const editBtn = document.getElementById("editModeBtn");
-  const studentNames = document.getElementById("studentNames");
-  const datePicker = document.getElementById("datePicker");
+    classDropdown.addEventListener("change", () => {
+      currentClass = classDropdown.value;
+      loadData();
+    });
 
-  let currentClass = classes[0];
-  let editMode = false;
-  let seats = Array(50).fill(null);
-  let lastSelected = null;
+    datePicker.addEventListener("change", () => loadData(datePicker.value));
 
-  classes.forEach(c => { let o = document.createElement("option"); o.text=c; classSelect.appendChild(o); });
-  classSelect.addEventListener("change", () => {
-    currentClass = classSelect.value;
-    loadCurrent();
-  });
-  editBtn.onclick = () => {
-    editMode = !editMode;
-    editBtn.textContent = `Edit Mode: ${editMode?"ON":"OFF"}`;
-    render();
-  };
-
- function buildGrid() {
-  gridEl.innerHTML = "";
-  seats.forEach((s, i) => {
-    let el = document.createElement("div");
-    el.className = "seat" + (editMode ? " editable" : "");
-    el.dataset.index = i;
-
-    if (s) {
-      el.innerHTML = `
-        <div class="name">${s.name}</div>
-        <div class="score">${s.score}</div>
-        <div class="controls">
-          <button onclick="changeScore(${i}, 1)">+</button>
-          <button onclick="changeScore(${i}, -1)">−</button>
-        </div>
-      `;
+    function toggleEditMode() {
+      editMode = !editMode;
+      renderChart();
     }
 
-    el.draggable = editMode && !!s;
-    if (editMode) {
-      el.addEventListener("dragstart", onDrag);
-      el.addEventListener("drop", onDrop);
-      el.addEventListener("dragover", e => e.preventDefault());
-      el.onclick = () => {
-        if (!s) return;
-        if (!lastSelected) {
-          lastSelected = i;
-          el.classList.add("highlight");
+    function getTodayKey() {
+      return datePicker.value || new Date().toISOString().slice(0, 10);
+    }
+
+    async function saveData() {
+      const key = getTodayKey();
+      const ref = doc(db, "scores", `${currentClass}_${key}`);
+      await setDoc(ref, { students: studentData });
+      const seatRef = doc(db, "seating", currentClass);
+      await setDoc(seatRef, { students: studentData });
+    }
+
+    async function loadData(date = null) {
+      const key = date || new Date().toISOString().slice(0, 10);
+      const ref = doc(db, "scores", `${currentClass}_${key}`);
+      const docSnap = await getDoc(ref);
+      if (docSnap.exists()) {
+        studentData = docSnap.data().students;
+      } else {
+        const seatRef = doc(db, "seating", currentClass);
+        const seatSnap = await getDoc(seatRef);
+        if (seatSnap.exists()) {
+          studentData = seatSnap.data().students.map((s) => ({ ...s, score: 5 }));
         } else {
-          [seats[lastSelected], seats[i]] = [seats[i], seats[lastSelected]];
-          lastSelected = null;
-          render();
+          studentData = Array.from({ length: 50 }, (_, i) => ({
+            name: "",
+            score: 5
+          }));
         }
-      };
+      }
+      renderChart();
     }
 
-    gridEl.appendChild(el);
-  });
-}
+    function renderChart() {
+      seatingChart.innerHTML = "";
+      studentData.forEach((student, index) => {
+        const div = document.createElement("div");
+        div.className = "student";
+        div.draggable = editMode;
 
+        if (editMode) {
+          const input = document.createElement("input");
+          input.value = student.name;
+          input.oninput = (e) => {
+            studentData[index].name = e.target.value;
+            saveData();
+          };
+          div.appendChild(input);
+        } else {
+          div.textContent = `${student.name} (${student.score})`;
+          const plus = document.createElement("button");
+          plus.textContent = "+1";
+          plus.className = "score-btn";
+          plus.onclick = () => {
+            if (student.score < 10) student.score++;
+            renderChart();
+            saveData();
+          };
+          const minus = document.createElement("button");
+          minus.textContent = "-1";
+          minus.className = "score-btn";
+          minus.onclick = () => {
+            if (student.score > -5) student.score--;
+            renderChart();
+            saveData();
+          };
+          div.appendChild(document.createElement("br"));
+          div.appendChild(plus);
+          div.appendChild(minus);
+        }
 
-  window.changeScore = (i,d) => {
-    if (!seats[i]) return;
-    seats[i].score = Math.max(-5, Math.min(10,seats[i].score+d));
-    render();
-  };
+        div.addEventListener("dragstart", () => {
+          div.classList.add("dragging");
+          div.dataset.dragIndex = index;
+        });
 
- function applyNames() {
-  let names = studentNames.value.trim().split("\n").map(s => s.trim()).filter(Boolean);
-  seats = Array(50).fill(null);
-  let rowStarts = [40, 30, 20, 10, 0]; // start index of each row from bottom up
-  let idx = 0;
+        div.addEventListener("dragend", () => {
+          div.classList.remove("dragging");
+        });
 
-  for (let r = 0; r < 5; r++) {
-    for (let c = 0; c < 10; c++) {
-      let name = names[idx];
-      if (!name) break;
-      let gridIndex = rowStarts[r] + c;
-      seats[gridIndex] = { name, score: 5 };
-      idx++;
+        div.addEventListener("dragover", (e) => {
+          e.preventDefault();
+        });
+
+        div.addEventListener("drop", (e) => {
+          e.preventDefault();
+          const from = parseInt(document.querySelector(".dragging").dataset.dragIndex);
+          const to = index;
+          const temp = studentData[from];
+          studentData[from] = studentData[to];
+          studentData[to] = temp;
+          renderChart();
+          saveData();
+        });
+
+        seatingChart.appendChild(div);
+      });
     }
-  }
 
-  saveLocal();
-  render();
-}
+    // Reset all students' scores to 5 at midnight
+    setInterval(() => {
+      const now = new Date();
+      if (now.getHours() === 0 && now.getMinutes() === 0) {
+        studentData = studentData.map((s) => ({ ...s, score: 5 }));
+        renderChart();
+        saveData();
+      }
+    }, 60000);
 
+    // Save snapshot at 2:30pm
+    setInterval(() => {
+      const now = new Date();
+      if (now.getHours() === 14 && now.getMinutes() === 30) {
+        saveData();
+      }
+    }, 60000);
 
-  function onDrag(e) { if(editMode) e.dataTransfer.setData("text",e.target.dataset.index); }
-  function onDrop(e) {
-    e.preventDefault();
-    let from = +e.dataTransfer.getData("text"), to=+e.currentTarget.dataset.index;
-    if(editMode) { [seats[from],seats[to]]=[seats[to],seats[from]]; render(); }
-  }
-
-  function render(){ buildGrid(); saveLocal(); }
-
-  function saveLocal(){
-    localStorage.setItem("seats_"+currentClass,seats.map(s=>s?s.name+"|"+s.score:"").join(";"));
-  }
-
-  function loadLocal(){
-    let data=localStorage.getItem("seats_"+currentClass);
-    if(data){
-      seats=data.split(";").map(x=>x?{name:x.split("|")[0],score:+x.split("|")[1]}:null);
-    } else seats=Array(50).fill(null);
-  }
-
-  async function saveFirestore(){
-    let obj={};
-    seats.forEach(s=>s&& (obj[s.name]=s.score));
-    let d=datePicker.value||new Date().toISOString().split("T")[0];
-    await setDoc(doc(db,"scores",`${currentClass}__${d}`), obj);
-    console.log("Saved",currentClass,d);
-  }
-
-  async function loadFirestore(d){
-    let snap=await getDoc(doc(db,"scores",`${currentClass}__${d}`));
-    if(snap.exists()){
-      let o=snap.data();
-      seats = Array(50).fill(null);
-      let names=Object.keys(o);
-      let idx=40;
-      for(let n of names){ seats[idx]={name:n,score:o[n]}; idx++;
-        if(idx%10===0) idx-=20; }
-      render();
-    } else alert("No data for "+d);
-  }
-
-  function saveManually(){ saveFirestore(); }
-  function loadByDate(){
-    let d = datePicker.value;
-    if(!d) return alert("Pick a date");
-    loadFirestore(d);
-  }
-
-  function dailySaveCheck(){
-    let now=new Date();
-    if(now.getHours()===14&&now.getMinutes()===30) saveFirestore();
-  }
-
-  function midnightReset(){
-    let today=new Date().toISOString().split("T")[0];
-    if(localStorage.getItem("lastDate")!==today){
-      seats.forEach(s=>s&&(s.score=5));
-      localStorage.setItem("lastDate",today);
-      saveLocal();
-      render();
-    }
-  }
-
-  setInterval(dailySaveCheck,60000);
-  midnightReset();
-
-  function loadCurrent(){
-    loadLocal();
-    datePicker.value = new Date().toISOString().split("T")[0];
-    loadFirestore(datePicker.value).catch(()=>render());
-  }
-
-  loadCurrent();
-</script>
-
+    // Initial load
+    loadData();
+  </script>
 </body>
 </html>
