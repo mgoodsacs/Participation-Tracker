@@ -77,7 +77,7 @@
 const autoSave = () => {
   clearTimeout(saveTimeout);
   saveTimeout = setTimeout(() => {
-    saveData();
+    autoSave();
   }, 500); // wait 500ms after last change
 };
 
@@ -121,7 +121,7 @@ const autoSave = () => {
               newOrder.push(studentData[id]);
             });
             studentData = newOrder;
-            saveData();
+            autoSave();
             renderChart();
           }
         });
@@ -140,7 +140,7 @@ const autoSave = () => {
         studentData = doc.data().students;
       } else {
         studentData = Array.from({ length: 50 }, (_, i) => ({ name: `Seat ${i + 1}`, score: 5 }));
-        saveData();
+        autoSave();
       }
       renderChart();
     };
@@ -175,7 +175,7 @@ const autoSave = () => {
       setTimeout(() => {
         studentData.forEach(s => s.score = 5);
         currentDate = new Date().toISOString().split('T')[0];
-        saveData();
+        autoSave();
         renderChart();
         resetAtMidnight(); // Set again for next midnight
       }, msUntilMidnight);
@@ -188,13 +188,13 @@ const autoSave = () => {
     });
 
     classSelector.addEventListener('change', () => {
-  saveData(); // Save current class before switching
+  autoSave(); // Save current class before switching
   currentClass = classSelector.value;
   loadData();
 });
 
 dateSelector.addEventListener('change', () => {
-  saveData(); // Save current date before switching
+  autoSave(); // Save current date before switching
   currentDate = dateSelector.value;
   loadData();
 });
@@ -202,7 +202,7 @@ dateSelector.addEventListener('change', () => {
 
     dateSelector.addEventListener('change', () => {
       currentDate = dateSelector.value;
-      loadData();
+      loadDate();
     });
 
     editToggle.addEventListener('click', () => {
@@ -211,7 +211,7 @@ dateSelector.addEventListener('change', () => {
     });
 
     seatingChart.addEventListener('dragend', () => {
-  saveData(); // Save new seating order
+  autoSave(); // Save new seating order
 });
 
     seatingChart.addEventListener('blur', (e) => {
@@ -219,7 +219,7 @@ dateSelector.addEventListener('change', () => {
   if (!cell) return;
   const id = parseInt(cell.getAttribute('data-id'));
   studentData[id].name = cell.querySelector('.student-name').innerText.trim();
-  saveData();
+  autoSave();
 }, true); // Use capture so blur bubbles correctly
 
     seatingChart.addEventListener('click', (e) => {
@@ -233,7 +233,7 @@ dateSelector.addEventListener('change', () => {
         if (studentData[id].score > -5) studentData[id].score--;
       }
       studentData[id].name = cell.querySelector('.student-name').innerText.trim();
-      saveData();
+      autoSave();
       renderChart();
     });
 
@@ -253,7 +253,7 @@ dateSelector.addEventListener('change', () => {
         studentData[i].name = name;
       });
       while (studentData.length < 50) studentData.push({ name: `Seat ${studentData.length + 1}`, score: 5 });
-      saveData();
+      autoSave();
       renderChart();
       bulkModal.classList.add('hidden');
     });
@@ -263,7 +263,7 @@ dateSelector.addEventListener('change', () => {
     // Reset scores but keep student names
   const resetScores = () => {
   studentData = studentData.map(s => ({ ...s, score: 5 }));
-  saveData();
+  autoSave();
   renderChart();
 };
     // Check time every minute
