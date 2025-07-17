@@ -2,272 +2,180 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Participation Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Choir Participation Tracker</title>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    #controls { margin-bottom: 20px; }
+    .grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 10px; }
+    .student-box {
+      border: 1px solid #ccc;
+      padding: 5px;
+      text-align: center;
+      border-radius: 6px;
+      cursor: move;
+      background-color: #f0f0f0;
+    }
+    .green { background-color: #a8e6a1; }
+    .yellow { background-color: #fff59d; }
+    .orange { background-color: #ffcc80; }
+    .red { background-color: #ef9a9a; }
+    .edit-mode input { width: 100%; }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <select id="classSelector"></select>
+    <button onclick="toggleEditMode()">Toggle Edit Mode</button>
+    <textarea id="nameInput" rows="4" cols="50" placeholder="Enter student names..."></textarea>
+    <button onclick="populateNames()">Populate Names</button>
+  </div>
+
+  <div class="grid" id="seatingGrid"></div>
+
   <script type="module">
-    // Firebase config
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import {
-      getFirestore, doc, setDoc, getDoc, collection
-    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+      getFirestore, doc, setDoc, getDoc, updateDoc, collection, getDocs
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     const firebaseConfig = {
-      apiKey: "YOUR_API_KEY",
-      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-      projectId: "YOUR_PROJECT_ID",
-      storageBucket: "YOUR_PROJECT_ID.appspot.com",
-      messagingSenderId: "YOUR_SENDER_ID",
-      appId: "YOUR_APP_ID"
+      apiKey: "AIzaSyCybxkV-rl6f9EvzSasLV09uFA3XzY6gqg",
+      authDomain: "participation-tracker-a1f77.firebaseapp.com",
+      projectId: "participation-tracker-a1f77",
+      storageBucket: "participation-tracker-a1f77.appspot.com",
+      messagingSenderId: "992471258983",
+      appId: "1:992471258983:web:a19d47a70a5cc91a1d2971"
     };
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
-    const defaultScore = 5;
-    const minScore = -5;
-    const maxScore = 10;
-    const numRows = 5;
-    const numCols = 10;
+    const classList = [
+      "Red2-6th",
+      "White2-6th",
+      "White3-Musical Theatre",
+      "Red4-8th",
+      "White4-7th",
+      "Class A",
+      "Class B",
+      "Class C"
+    ];
 
-    const classSelector = document.getElementById('classSelector');
-    const dateSelector = document.getElementById('dateSelector');
-    const seatingChart = document.getElementById('seatingChart');
-    const toggleEdit = document.getElementById('toggleEdit');
-
-    let currentClass = classSelector.value;
-    let currentDate = dateSelector.value;
+    const grid = document.getElementById("seatingGrid");
+    const selector = document.getElementById("classSelector");
+    const nameInput = document.getElementById("nameInput");
+    let currentClass = classList[0];
+    let students = [];
     let editMode = false;
-    let studentData = {};
 
-    function createGrid() {
-      seatingChart.innerHTML = '';
-      for (let row = 0; row < numRows; row++) {
-        const rowDiv = document.createElement('div');
-        rowDiv.className = 'row';
-        for (let col = 0; col < numCols; col++) {
-          const studentId = `${row}-${col}`;
-          const box = document.createElement('div');
-          box.className = 'student';
-          box.id = studentId;
-          box.draggable = editMode;
+    classList.forEach(c => {
+      const opt = document.createElement("option");
+      opt.value = c;
+      opt.textContent = c;
+      selector.appendChild(opt);
+    });
 
-          const name = document.createElement('input');
-          name.type = 'text';
-          name.placeholder = 'Name';
-          name.className = 'name';
-          name.disabled = !editMode;
+    selector.addEventListener("change", async () => {
+      currentClass = selector.value;
+      await loadSeating();
+      await dailyResetCheck();
+      renderGrid();
+    });
 
-          const score = document.createElement('div');
-          score.className = 'score';
-          score.innerText = defaultScore;
-
-          const btnGroup = document.createElement('div');
-          btnGroup.className = 'btnGroup';
-          const plus = document.createElement('button');
-          plus.textContent = '+';
-          plus.onclick = () => updateScore(studentId, 1);
-          const minus = document.createElement('button');
-          minus.textContent = '-';
-          minus.onclick = () => updateScore(studentId, -1);
-          btnGroup.appendChild(minus);
-          btnGroup.appendChild(plus);
-
-          box.appendChild(name);
-          box.appendChild(score);
-          box.appendChild(btnGroup);
-          rowDiv.appendChild(box);
-
-          // Enable drag-n-drop if in edit mode
-          if (editMode) {
-            box.ondragstart = dragStart;
-            box.ondragover = dragOver;
-            box.ondrop = drop;
-          }
-
-          studentData[studentId] = { name: '', score: defaultScore };
-        }
-        seatingChart.appendChild(rowDiv);
-      }
-    }
-
-    function updateScore(id, delta) {
-      const box = document.getElementById(id);
-      const scoreElem = box.querySelector('.score');
-      let currentScore = parseInt(scoreElem.innerText);
-      currentScore = Math.max(minScore, Math.min(maxScore, currentScore + delta));
-      scoreElem.innerText = currentScore;
-      studentData[id].score = currentScore;
-      saveToFirestore();
-    }
-
-    function dragStart(e) {
-      e.dataTransfer.setData('text/plain', e.target.id);
-    }
-
-    function dragOver(e) {
-      e.preventDefault();
-    }
-
-    function drop(e) {
-      e.preventDefault();
-      const fromId = e.dataTransfer.getData('text');
-      const toId = e.target.closest('.student').id;
-      if (fromId !== toId) {
-        const fromBox = document.getElementById(fromId);
-        const toBox = document.getElementById(toId);
-
-        const temp = toBox.innerHTML;
-        toBox.innerHTML = fromBox.innerHTML;
-        fromBox.innerHTML = temp;
-
-        studentData[toId] = extractStudentData(toBox);
-        studentData[fromId] = extractStudentData(fromBox);
-
-        saveToFirestore();
-      }
-    }
-
-    function extractStudentData(box) {
-      return {
-        name: box.querySelector('.name')?.value || '',
-        score: parseInt(box.querySelector('.score')?.innerText || defaultScore)
-      };
-    }
-
-    function populateData(data) {
-      Object.entries(data || {}).forEach(([id, val]) => {
-        const box = document.getElementById(id);
-        if (!box) return;
-        box.querySelector('.name').value = val.name || '';
-        box.querySelector('.score').innerText = val.score ?? defaultScore;
-        studentData[id] = { name: val.name || '', score: val.score ?? defaultScore };
-      });
-    }
-
-    async function saveToFirestore() {
-      const docRef = doc(db, "classes", currentClass, "dates", currentDate);
-      await setDoc(docRef, studentData);
-    }
-
-    async function loadFromFirestore() {
-      const docRef = doc(db, "classes", currentClass, "dates", currentDate);
-      const snapshot = await getDoc(docRef);
-      if (snapshot.exists()) {
-        studentData = snapshot.data();
-      } else {
-        studentData = {};
-      }
-      createGrid();
-      populateData(studentData);
-    }
-
-    function resetScores() {
-      Object.keys(studentData).forEach(id => {
-        studentData[id].score = defaultScore;
-      });
-      createGrid();
-      populateData(studentData);
-      saveToFirestore();
-    }
-
-    // Auto reset at midnight
-    setInterval(() => {
-      const now = new Date();
-      if (now.getHours() === 0 && now.getMinutes() === 0) {
-        resetScores();
-      }
-    }, 60000);
-
-    // Snapshot save at 2:30 PM
-    setInterval(() => {
-      const now = new Date();
-      if (now.getHours() === 14 && now.getMinutes() === 30) {
-        saveToFirestore();
-      }
-    }, 60000);
-
-    // UI Handlers
-    toggleEdit.addEventListener('click', () => {
+    function toggleEditMode() {
       editMode = !editMode;
-      toggleEdit.innerText = editMode ? 'Disable Edit Mode' : 'Enable Edit Mode';
-      createGrid();
-      populateData(studentData);
-    });
+      renderGrid();
+    }
 
-    classSelector.addEventListener('change', () => {
-      currentClass = classSelector.value;
-      loadFromFirestore();
-    });
+    async function populateNames() {
+      const names = nameInput.value.trim().split("\n").filter(n => n);
+      students = names.map(name => ({ name, points: 5 }));
+      await saveSeating();
+      await saveTodayScores();
+      renderGrid();
+    }
 
-    dateSelector.addEventListener('change', () => {
-      currentDate = dateSelector.value;
-      loadFromFirestore();
-    });
+    function getColor(points) {
+      if (points >= 5) return "green";
+      if (points >= 3) return "yellow";
+      if (points >= 1) return "orange";
+      return "red";
+    }
 
-    // Initial Load
-    window.onload = () => {
-      currentDate = new Date().toISOString().split('T')[0];
-      dateSelector.value = currentDate;
-      loadFromFirestore();
+    function renderGrid() {
+      grid.innerHTML = "";
+      students.forEach((student, i) => {
+        const div = document.createElement("div");
+        div.className = `student-box ${getColor(student.points)}`;
+
+        if (editMode) {
+          const input = document.createElement("input");
+          input.value = student.name;
+          input.onchange = async () => {
+            student.name = input.value;
+            await saveSeating();
+          };
+          div.appendChild(input);
+        } else {
+          div.innerHTML = `
+            <div>${student.name}</div>
+            <div>
+              <button onclick="adjustPoints(${i}, -1)">-1</button>
+              <span>${student.points}</span>
+              <button onclick="adjustPoints(${i}, 1)">+1</button>
+            </div>
+          `;
+        }
+        grid.appendChild(div);
+      });
+    }
+
+    window.adjustPoints = async (index, delta) => {
+      let s = students[index];
+      s.points = Math.min(10, Math.max(-5, s.points + delta));
+      await saveTodayScores();
+      renderGrid();
     };
+
+    async function saveSeating() {
+      await setDoc(doc(db, "seating", currentClass), { students });
+    }
+
+    async function loadSeating() {
+      const docSnap = await getDoc(doc(db, "seating", currentClass));
+      students = docSnap.exists() ? docSnap.data().students : [];
+    }
+
+    async function saveTodayScores() {
+      const today = new Date().toISOString().split("T")[0];
+      await setDoc(doc(db, `scores/${today}/${currentClass}`), { students });
+    }
+
+    async function loadTodayScores() {
+      const today = new Date().toISOString().split("T")[0];
+      const docSnap = await getDoc(doc(db, `scores/${today}/${currentClass}`));
+      if (docSnap.exists()) {
+        students = docSnap.data().students;
+      }
+    }
+
+    async function dailyResetCheck() {
+      const today = new Date().toISOString().split("T")[0];
+      const lastDate = localStorage.getItem("lastResetDate");
+      if (lastDate !== today) {
+        await loadSeating();
+        students = students.map(s => ({ ...s, points: 5 }));
+        await saveTodayScores();
+        localStorage.setItem("lastResetDate", today);
+      } else {
+        await loadTodayScores();
+      }
+    }
+
+    await loadSeating();
+    await dailyResetCheck();
+    renderGrid();
   </script>
-  <style>
-    body {
-      font-family: sans-serif;
-      padding: 20px;
-    }
-    #controls {
-      margin-bottom: 10px;
-    }
-    .row {
-      display: flex;
-    }
-    .student {
-      width: 100px;
-      height: 100px;
-      border: 1px solid #ccc;
-      margin: 2px;
-      padding: 5px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      background: #f9f9f9;
-    }
-    .name {
-      font-size: 12px;
-      text-align: center;
-    }
-    .score {
-      text-align: center;
-      font-size: 18px;
-      font-weight: bold;
-    }
-    .btnGroup {
-      display: flex;
-      justify-content: space-between;
-    }
-  </style>
-</head>
-<body>
-  <div id="controls">
-    <label for="classSelector">Class:</label>
-    <select id="classSelector">
-      <option>Red2-6th</option>
-      <option>White2-6th</option>
-      <option>White3-Musical Theatre</option>
-      <option>Red4-8th</option>
-      <option>White4-7th</option>
-      <option>Class A</option>
-      <option>Class B</option>
-      <option>Class C</option>
-    </select>
-
-    <label for="dateSelector">Date:</label>
-    <input type="date" id="dateSelector"/>
-
-    <button id="toggleEdit">Enable Edit Mode</button>
-  </div>
-
-  <div id="seatingChart"></div>
 </body>
 </html>
