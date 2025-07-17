@@ -7,85 +7,49 @@
   <style>
     body {
       background-color: #121212;
-      color: #fff;
+      color: #ffffff;
       font-family: sans-serif;
-      margin: 0;
-      padding: 20px;
+      padding: 1rem;
     }
-    select, button, textarea {
-      margin: 5px;
-      padding: 5px;
-      background-color: #1f1f1f;
+    select, button, input {
+      background-color: #1e1e1e;
       color: #fff;
-      border: 1px solid #333;
+      border: 1px solid #444;
+      padding: 5px;
+      margin: 5px;
     }
     .grid {
       display: grid;
       grid-template-columns: repeat(10, 1fr);
-      grid-template-rows: repeat(5, 80px);
-      gap: 5px;
+      grid-template-rows: repeat(5, 1fr);
+      gap: 10px;
       margin-top: 20px;
     }
     .student {
       background-color: #333;
-      border: 1px solid #666;
-      padding: 4px;
+      padding: 10px;
+      border: 1px solid #555;
+      cursor: move;
       display: flex;
       flex-direction: column;
-      justify-content: center;
       align-items: center;
-      font-size: 12px;
-      border-radius: 4px;
-      cursor: grab;
-      user-select: none;
     }
-    .student.locked {
-      cursor: default;
-    }
-    .controls {
-      margin-top: 10px;
-    }
-    .score-controls {
+    .buttons {
       display: flex;
-      gap: 3px;
+      justify-content: space-between;
       margin-top: 5px;
-    }
-    .score-controls button {
-      width: 20px;
-      height: 20px;
-      font-size: 12px;
-      line-height: 10px;
-      padding: 0;
-    }
-    #studentInput {
       width: 100%;
-      height: 80px;
     }
   </style>
 </head>
 <body>
   <h1>Participation Tracker</h1>
+  <select id="classSelector"></select>
+  <button onclick="toggleEdit()">Toggle Edit Mode</button>
+  <button onclick="loadScoresForDate()">Load Past Scores</button>
+  <input type="date" id="datePicker" />
 
-  <label for="classSelect">Class:</label>
-  <select id="classSelect">
-    <option>Red2 - 6th Grade Choir</option>
-    <option>White2 - 6th Grade Choir</option>
-    <option>White3 - Musical Theatre</option>
-    <option>Red4 - 8th Grade Choir</option>
-    <option>White4 - 7th Grade Choir</option>
-    <option>Class A</option>
-    <option>Class B</option>
-    <option>Class C</option>
-  </select>
-
-  <div class="controls">
-    <button onclick="toggleEdit()">Toggle Edit Mode</button>
-    <button onclick="pasteStudents()">Paste Students</button>
-  </div>
-
-  <textarea id="studentInput" placeholder="Paste student names here (one per line)..."></textarea>
-
-  <div class="grid" id="seatingChart"></div>
+  <div id="grid" class="grid"></div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -103,13 +67,165 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
-    const seatingChart = document.getElementById("seatingChart");
-    const classSelect = document.getElementById("classSelect");
-    let isEditMode = false;
-    let studentData = {};
-    let currentDate = new Date().toISOString().split("T")[0];
+    const classSelector = document.getElementById("classSelector");
+    const grid = document.getElementById("grid");
+    const datePicker = document.getElementById("datePicker");
 
-    classSelect.addEventListener("change", loadClass);
+    const defaultClasses = [
+      "Red2-6th grade choir",
+      "White2-6th grade choir",
+      "White3-Musical Theatre",
+      "Red4-8th grade choir",
+      "White4-7th grade choir",
+      "Class A",
+      "Class B",
+      "Class C"
+    ];
+
+    let currentClass = defaultClasses[0];
+    let students = {};
+    let editMode = false;
+
+    defaultClasses.forEach(cls => {
+      const option = document.createElement("option");
+      option.textContent = cls;
+      classSelector.appendChild(option);
+    });
+
+    classSelector.addEventListener("change", () => {
+      currentClass = classSelector.value;
+      loadStudents(currentClass);
+    });
+
+    function createStudentElement(name, score) {
+      const studentEl = document.createElement("div");
+      studentEl.className = "student";
+      studentEl.draggable = editMode;
+      studentEl.dataset.name = name;
+      studentEl.dataset.score = score;
+
+      studentEl.innerHTML = `
+        <div>${name}</div>
+        <div>Score: <span class="score">${score}</span></div>
+        <div class="buttons">
+          <button onclick="changeScore('${name}', 1)">+1</button>
+          <button onclick="changeScore('${name}', -1)">-1</button>
+        </div>
+      `;
+
+      studentEl.addEventListener("dragstart", dragStart);
+      studentEl.addEventListener("drop", drop);
+      studentEl.addEventListener("dragover", allowDrop);
+
+      return studentEl;
+    }
+
+    function loadStudents(cls) {
+      grid.innerHTML = "";
+      if (!students[cls]) {
+        students[cls] = [];
+        for (let i = 0; i < 50; i++) {
+          students[cls].push({ name: `Student ${i + 1}`, score: 5 });
+        }
+      }
+
+      students[cls].forEach((s) => {
+        const el = createStudentElement(s.name, s.score);
+        grid.appendChild(el);
+      });
+    }
+
+    window.changeScore = function(name, delta) {
+      const list = students[currentClass];
+      const student = list.find(s => s.name === name);
+      if (!student) return;
+      student.score = Math.max(-5, Math.min(10, student.score + delta));
+      loadStudents(currentClass);
+    };
 
     function toggleEdit() {
-      isEditMode = !isEditMode;
+      editMode = !editMode;
+      loadStudents(currentClass);
+    }
+
+    function dragStart(e) {
+      e.dataTransfer.setData("text", e.target.dataset.name);
+    }
+
+    function allowDrop(e) {
+      e.preventDefault();
+    }
+
+    function drop(e) {
+      e.preventDefault();
+      const draggedName = e.dataTransfer.getData("text");
+      const targetName = e.target.closest(".student").dataset.name;
+
+      const list = students[currentClass];
+      const draggedIndex = list.findIndex(s => s.name === draggedName);
+      const targetIndex = list.findIndex(s => s.name === targetName);
+
+      if (draggedIndex !== -1 && targetIndex !== -1) {
+        const temp = list[draggedIndex];
+        list[draggedIndex] = list[targetIndex];
+        list[targetIndex] = temp;
+        loadStudents(currentClass);
+      }
+    }
+
+    async function saveToFirestore() {
+      const today = new Date().toISOString().split("T")[0];
+      const scores = {};
+      students[currentClass].forEach(s => {
+        scores[s.name] = s.score;
+      });
+
+      const ref = doc(db, "scores", `${currentClass}__${today}`);
+      await setDoc(ref, scores);
+      console.log(`Saved scores for ${currentClass} on ${today}`);
+    }
+
+    async function loadScoresForDate() {
+      const date = datePicker.value;
+      if (!date) return alert("Pick a date first!");
+
+      const ref = doc(db, "scores", `${currentClass}__${date}`);
+      const snapshot = await getDoc(ref);
+      if (!snapshot.exists()) {
+        alert("No data found for this date.");
+        return;
+      }
+
+      const data = snapshot.data();
+      students[currentClass] = Object.entries(data).map(([name, score]) => ({ name, score }));
+      loadStudents(currentClass);
+    }
+
+    function checkTimeForAutoSave() {
+      const now = new Date();
+      if (now.getHours() === 14 && now.getMinutes() === 30) {
+        saveToFirestore();
+      }
+    }
+
+    function checkMidnightReset() {
+      const lastDate = localStorage.getItem("lastDate") || "";
+      const today = new Date().toISOString().split("T")[0];
+      if (lastDate !== today) {
+        // New day: reset scores
+        defaultClasses.forEach(cls => {
+          if (students[cls]) {
+            students[cls].forEach(s => s.score = 5);
+          }
+        });
+        localStorage.setItem("lastDate", today);
+        loadStudents(currentClass);
+      }
+    }
+
+    setInterval(checkTimeForAutoSave, 60000); // every minute
+    checkMidnightReset();
+    loadStudents(currentClass);
+  </script>
+</body>
+</html>
