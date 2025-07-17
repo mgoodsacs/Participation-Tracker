@@ -73,12 +73,22 @@
     let editMode = false;
     let studentData = [];
 
-    let saveTimeout;
+   let saveTimeout;
+
 const autoSave = () => {
   clearTimeout(saveTimeout);
   saveTimeout = setTimeout(() => {
-    autoSave();
-  }, 500); // wait 500ms after last change
+    saveData();
+  }, 500);
+};
+
+// New helper to flush pending auto-save before changing class
+const flushAutoSave = async () => {
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+    saveTimeout = null;
+    await saveData();  // Force save immediately
+  }
 };
 
     // Utils
@@ -182,15 +192,10 @@ const autoSave = () => {
     };
 
     // Event Listeners
- classSelector.addEventListener("change", () => {
-  // Save current class before switching
-  autoSave();
-
-  // Delay updating class and loading new data until save has settled
-  setTimeout(() => {
-    currentClass = classSelector.value;
-    loadData(); // Loads new class data after update
-  }, 600); // Slightly longer than autoSave delay (500ms)
+classSelector.addEventListener("change", async () => {
+  await flushAutoSave();             // Save the current class BEFORE switching
+  currentClass = classSelector.value;
+  loadData();                        // Load the new class’s data AFTER switching
 });
 
 dateSelector.addEventListener('change', () => {
